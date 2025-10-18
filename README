@@ -1,0 +1,5 @@
+These files are meant as hints for building a hyperspectral sensor. I've removed some stuff and I did not include info on setting up the database environment. I really don't wnat to create a how-to.
+
+This is a complex project and doing a lot yourself will help you understand.
+
+In any case, I hope this helps but there is not guarantee this code works. In fact I guarantee some of this code does not work and it's up toth user to figure it out.

@@ -14,6 +14,8 @@
 #include "sdkconfig.h"
 #include "hsi_camera.h"
 #include "stepper.h"
+#include "webcam.h"
+#include "esp_heap_caps.h"
 #include "storage.h"
 #include "net.h"
 #include "web.h"
@@ -359,6 +361,101 @@ static esp_err_t motor_sleep_post(httpd_req_t *req)
     return send_json(req, "200 OK", "{\"ok\":true}");
 }
 
+// ---- USB webcam ----
+
+static esp_err_t webcam_status_get(httpd_req_t *req)
+{
+    uint16_t w, h;
+    float fps;
+    uint32_t frames;
+    webcam_get_info(&w, &h, &fps, &frames);
+    char body[256];
+    snprintf(body, sizeof(body),
+             "{\"connected\":%s,\"width\":%u,\"height\":%u,\"fps\":%.1f,\"frames\":%lu,"
+             "\"stream_port\":%d,\"band_top\":%d,\"band_bottom\":%d}",
+             webcam_connected() ? "true" : "false", w, h, fps, (unsigned long)frames,
+             CONFIG_HSI_HTTP_PORT + 1, CONFIG_HSI_FOV_BAND_TOP, CONFIG_HSI_FOV_BAND_BOTTOM);
+    return send_json(req, "200 OK", body);
+}
+
+// Bring-up check of the scan path: decode one frame in hardware and take its centre column.
+static esp_err_t webcam_test_get(httpd_req_t *req)
+{
+    if (!webcam_connected()) {
+        return send_json(req, "503 Service Unavailable", "{\"error\":\"no webcam\"}");
+    }
+    static uint8_t line[3 * 2160];
+    uint16_t n = 0;
+    int64_t t0 = esp_timer_get_time();
+    esp_err_t err = webcam_grab_center_column(line, sizeof(line), &n, 1000);
+    int64_t t1 = esp_timer_get_time();
+    if (err != ESP_OK) {
+        char body[96];
+        snprintf(body, sizeof(body), "{\"error\":\"%s\"}", esp_err_to_name(err));
+        return send_json(req, "500 Internal Server Error", body);
+    }
+    unsigned long sum[3] = {0};
+    for (int i = 0; i < n; i++) {
+        for (int c = 0; c < 3; c++) {
+            sum[c] += line[i * 3 + c];
+        }
+    }
+    char body[160];
+    snprintf(body, sizeof(body), "{\"pixels\":%u,\"grab_decode_ms\":%lld,\"mean_rgb\":[%lu,%lu,%lu]}",
+             n, (t1 - t0) / 1000, n ? sum[0] / n : 0, n ? sum[1] / n : 0, n ? sum[2] / n : 0);
+    return send_json(req, "200 OK", body);
+}
+
+// MJPEG viewfinder. Runs on its own server (port + 1) because a stream never
+// returns, and esp_http_server handles one request at a time.
+#define STREAM_BOUNDARY "hsiframe"
+static esp_err_t webcam_stream_get(httpd_req_t *req)
+{
+    const size_t cap = 512 * 1024;
+    uint8_t *buf = heap_caps_malloc(cap, MALLOC_CAP_SPIRAM);
+    if (!buf) {
+        return httpd_resp_send_500(req);
+    }
+    httpd_resp_set_type(req, "multipart/x-mixed-replace; boundary=" STREAM_BOUNDARY);
+    httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
+    httpd_resp_set_hdr(req, "Cache-Control", "no-store");
+    uint32_t seq = 0;
+    esp_err_t err = ESP_OK;
+    while (err == ESP_OK) {
+        size_t len = 0;
+        if (webcam_get_jpeg(buf, cap, &len, &seq, 2000) != ESP_OK) {
+            if (!webcam_connected()) {
+                vTaskDelay(pdMS_TO_TICKS(500));
+            }
+            continue;
+        }
+        char head[96];
+        int n = snprintf(head, sizeof(head), "\r\n--" STREAM_BOUNDARY "\r\nContent-Type: image/jpeg\r\nContent-Length: %u\r\n\r\n",
+                         (unsigned)len);
+        err = httpd_resp_send_chunk(req, head, n);
+        if (err == ESP_OK) {
+            err = httpd_resp_send_chunk(req, (const char *)buf, len);
+        }
+    }
+    free(buf);
+    return ESP_OK;   // client went away
+}
+
+static esp_err_t start_stream_server(void)
+{
+    httpd_config_t cfg = HTTPD_DEFAULT_CONFIG();
+    cfg.server_port = CONFIG_HSI_HTTP_PORT + 1;
+    cfg.ctrl_port = cfg.ctrl_port + 1;
+    cfg.max_uri_handlers = 2;
+    httpd_handle_t server = NULL;
+    esp_err_t err = httpd_start(&server, &cfg);
+    if (err != ESP_OK) {
+        return err;
+    }
+    httpd_uri_t u = {.uri = "/webcam", .method = HTTP_GET, .handler = webcam_stream_get};
+    return httpd_register_uri_handler(server, &u);
+}
+
 esp_err_t web_start(void)
 {
     s_capture_lock = xSemaphoreCreateMutex();
@@ -366,7 +463,7 @@ esp_err_t web_start(void)
     cfg.server_port = CONFIG_HSI_HTTP_PORT;
     cfg.uri_match_fn = httpd_uri_match_wildcard;
     cfg.stack_size = 8192;
-    cfg.max_uri_handlers = 16;
+    cfg.max_uri_handlers = 20;
     httpd_handle_t server = NULL;
     esp_err_t err = httpd_start(&server, &cfg);
     if (err != ESP_OK) {
@@ -383,10 +480,15 @@ esp_err_t web_start(void)
         {.uri = "/api/motor/calibrate", .method = HTTP_POST, .handler = motor_calibrate_post},
         {.uri = "/api/motor/move", .method = HTTP_POST, .handler = motor_move_post},
         {.uri = "/api/motor/sleep", .method = HTTP_POST, .handler = motor_sleep_post},
+        {.uri = "/api/webcam/status", .method = HTTP_GET, .handler = webcam_status_get},
+        {.uri = "/api/webcam/test", .method = HTTP_GET, .handler = webcam_test_get},
     };
     for (size_t i = 0; i < sizeof(uris) / sizeof(uris[0]); i++) {
         httpd_register_uri_handler(server, &uris[i]);
     }
-    ESP_LOGI(TAG, "web server on port %d", CONFIG_HSI_HTTP_PORT);
+    if (start_stream_server() != ESP_OK) {
+        ESP_LOGE(TAG, "viewfinder stream server failed to start");
+    }
+    ESP_LOGI(TAG, "web server on port %d, viewfinder on port %d", CONFIG_HSI_HTTP_PORT, CONFIG_HSI_HTTP_PORT + 1);
     return ESP_OK;
 }

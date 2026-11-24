@@ -84,6 +84,27 @@ menu "Hyperspectral scanner"
             default 160
     endmenu
 
+    menu "USB webcam"
+        config HSI_WEBCAM_WIDTH
+            int "Width"
+            default 640
+        config HSI_WEBCAM_HEIGHT
+            int "Height"
+            default 480
+        config HSI_WEBCAM_FPS
+            int "Frames per second (0 = camera default)"
+            default 30
+        config HSI_FOV_BAND_TOP
+            int "Scan band top row in the webcam image"
+            default 103
+            help
+                The rows between top and bottom are what the hyperspectral camera
+                sees. Defaults are from the Pi calibration file (calibrationInfo['scan']).
+        config HSI_FOV_BAND_BOTTOM
+            int "Scan band bottom row in the webcam image"
+            default 318
+    endmenu
+
     menu "microSD card"
         config HSI_SD_LDO_CHAN
             int "Internal LDO channel powering the SD card IO (-1 if powered externally)"

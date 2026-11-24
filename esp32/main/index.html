@@ -23,8 +23,10 @@
     <img id="vf" alt="webcam viewfinder" style="display:block; max-width:100%">
     <div id="bandTop" style="position:absolute; left:0; right:0; border-top:2px solid red"></div>
     <div id="bandBottom" style="position:absolute; left:0; right:0; border-top:2px solid red"></div>
+    <div id="target" style="position:absolute; display:none; border:2px solid red; border-radius:50%; box-sizing:border-box"></div>
   </div>
   <div><button id="webcamTest">Test line grab</button> <span id="webcamInfo"></span></div>
+  <div><button id="setOffset">Set target offset</button> <span id="calInfo"></span></div>
 </fieldset>
 
 <fieldset>
@@ -130,13 +132,59 @@ document.getElementById('motorSleep').onclick = () => motorPost('/api/motor/slee
 setInterval(refreshMotor, 1000);
 refreshMotor();
 let band = null;
+let cal = null;
+let pickingOffset = false;
 function placeBand() {
   const img = document.getElementById('vf');
   if (!band || !img.naturalHeight) return;
   const k = img.clientHeight / img.naturalHeight;
   document.getElementById('bandTop').style.top = (band[0] * k) + 'px';
   document.getElementById('bandBottom').style.top = (band[1] * k) + 'px';
+  const t = document.getElementById('target');
+  if (cal && cal.loaded && cal.target.center[0] >= 0) {
+    // Same as the Pi viewfinder: target centre plus the webcam offset, in webcam pixels.
+    const r = Math.max(cal.target.radius, 5) * k;
+    const x = (cal.target.center[0] + cal.webcam_offset[0]) * k;
+    const y = (cal.target.center[1] + cal.webcam_offset[1]) * k;
+    Object.assign(t.style, {display: 'block', left: (x - r) + 'px', top: (y - r) + 'px',
+                            width: (2 * r) + 'px', height: (2 * r) + 'px'});
+  } else {
+    t.style.display = 'none';
+  }
 }
+function showCal() {
+  document.getElementById('calInfo').textContent = cal.loaded
+    ? `calibration ${cal.source}, offset ${cal.webcam_offset.join(', ')}`
+    : 'no calibration.json on the SD card (using built-in window and band)';
+  document.getElementById('setOffset').disabled = !cal.loaded;
+}
+async function loadCalibration() {
+  const r = await fetch('/api/calibration');
+  cal = await r.json();
+  showCal();
+  placeBand();
+}
+document.getElementById('setOffset').onclick = () => {
+  pickingOffset = true;
+  document.getElementById('calInfo').textContent = 'click the viewfinder where the HQ camera target really is';
+};
+document.getElementById('vf').onclick = async (ev) => {
+  if (!pickingOffset) return;
+  pickingOffset = false;
+  const img = ev.target;
+  const k = img.naturalWidth / img.clientWidth;
+  const col = Math.round(ev.offsetX * k), row = Math.round(ev.offsetY * k);
+  const r = await fetch(`/api/calibration/offset?col=${col}&row=${row}`, {method: 'POST'});
+  const j = await r.json();
+  if (j.error) {
+    document.getElementById('calInfo').textContent = j.error;
+  } else {
+    cal = j;
+    showCal();
+    placeBand();
+  }
+};
+loadCalibration();
 async function startViewfinder() {
   const r = await fetch('/api/webcam/status');
   const w = await r.json();

@@ -1,0 +1,205 @@
+{
+  "format": "lensforge-1",
+  "name": "New lens",
+  "units": "mm",
+  "aperture": {
+    "type": "EPD",
+    "value": 6.0
+  },
+  "fields": {
+    "type": "ANGLE",
+    "values": [
+      {
+        "x": 0.0,
+        "y": 0.0,
+        "weight": 1.0,
+        "vdx": 0.0,
+        "vdy": 0.0,
+        "vcx": 0.0,
+        "vcy": 0.0,
+        "van": 0.0
+      },
+      {
+        "x": 0.0,
+        "y": 7.071067812,
+        "weight": 1.0,
+        "vdx": 0.0,
+        "vdy": -0.115739,
+        "vcx": 0.006721,
+        "vcy": 0.115739,
+        "van": 0.0
+      },
+      {
+        "x": 0.0,
+        "y": 10.0,
+        "weight": 1.0,
+        "vdx": 0.0,
+        "vdy": -0.243464,
+        "vcx": 0.030091,
+        "vcy": 0.243465,
+        "van": 0.0
+      }
+    ]
+  },
+  "wavelengths": {
+    "values": [
+      {
+        "value": 0.486133,
+        "weight": 1.0
+      },
+      {
+        "value": 0.587562,
+        "weight": 1.0
+      },
+      {
+        "value": 0.656273,
+        "weight": 1.0
+      }
+    ],
+    "primary": 1
+  },
+  "ray_aiming": "paraxial",
+  "notes": "",
+  "surfaces": [
+    {
+      "type": "STANDARD",
+      "curvature": 0.0,
+      "conic": 0.0,
+      "thickness": "inf",
+      "material": null,
+      "comment": "OBJECT"
+    },
+    {
+      "type": "COORDBRK",
+      "decenter_x": 0.0,
+      "decenter_y": 0.0,
+      "tilt_x": 0.0,
+      "tilt_y": 0.0,
+      "tilt_z": 90.0,
+      "order": 0,
+      "thickness": 0.0,
+      "material": null,
+      "stop": true
+    },
+    {
+      "type": "COORDBRK",
+      "decenter_x": 0.0,
+      "decenter_y": 0.0,
+      "tilt_x": 10.0,
+      "tilt_y": 0.0,
+      "tilt_z": 0.0,
+      "order": 0,
+      "thickness": 0.0,
+      "material": null
+    },
+    {
+      "type": "DGRATING",
+      "curvature": 0.0,
+      "conic": 0.0,
+      "lines_per_um": 0.2,
+      "diffraction_order": 1.0,
+      "thickness": 0.0,
+      "material": null
+    },
+    {
+      "type": "COORDBRK",
+      "decenter_x": 0.0,
+      "decenter_y": 0.0,
+      "tilt_x": -10.0,
+      "tilt_y": 0.0,
+      "tilt_z": 0.0,
+      "order": 0,
+      "thickness": 2.0,
+      "material": null
+    },
+    {
+      "type": "COORDBRK",
+      "decenter_x": 0.0,
+      "decenter_y": 0.0,
+      "tilt_x": 0.0,
+      "tilt_y": 0.0,
+      "tilt_z": -90.0,
+      "order": 0,
+      "thickness": 0.0,
+      "material": null
+    },
+    {
+      "type": "PARAXIAL",
+      "focal_length": 10.0,
+      "thickness": 10.0,
+      "material": null
+    },
+    {
+      "type": "STANDARD",
+      "curvature": 0.0,
+      "conic": 0.0,
+      "thickness": 0.0,
+      "material": null,
+      "comment": "IMAGE"
+    }
+  ],
+  "optimization": {
+    "merit_function": {
+      "rows": [
+        {
+          "type": "BLNK",
+          "target": 0.0,
+          "weight": 0,
+          "bound": "=",
+          "params": {},
+          "comment": "Default merit: RMS Spot radius, centroid, 3 rings x 6 arms"
+        },
+        {
+          "type": "RAYS",
+          "target": 0.0,
+          "weight": 1.0,
+          "bound": "=",
+          "params": {
+            "field": 0,
+            "reference": "centroid",
+            "wavelengths": null,
+            "symmetric": null,
+            "rings": 3,
+            "arms": 6
+          },
+          "comment": ""
+        },
+        {
+          "type": "RAYS",
+          "target": 0.0,
+          "weight": 1.0,
+          "bound": "=",
+          "params": {
+            "field": 1,
+            "reference": "centroid",
+            "wavelengths": null,
+            "symmetric": null,
+            "rings": 3,
+            "arms": 6
+          },
+          "comment": ""
+        },
+        {
+          "type": "RAYS",
+          "target": 0.0,
+          "weight": 1.0,
+          "bound": "=",
+          "params": {
+            "field": 2,
+            "reference": "centroid",
+            "wavelengths": null,
+            "symmetric": null,
+            "rings": 3,
+            "arms": 6
+          },
+          "comment": ""
+        }
+      ],
+      "wizard": {
+        "kind": "spot",
+        "start_at": null,
+        "keep": true
+      }
+    }
+  }
+}

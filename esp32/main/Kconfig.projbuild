@@ -1,0 +1,66 @@
+menu "Hyperspectral scanner"
+
+    menu "Wi-Fi"
+        config HSI_WIFI_SSID
+            string "Network to join (leave empty to always run an access point)"
+            default ""
+        config HSI_WIFI_PASSWORD
+            string "Network password"
+            default ""
+        config HSI_HOSTNAME
+            string "Hostname"
+            default "hsi-scanner"
+        config HSI_AP_SSID
+            string "Fallback access point name"
+            default "hsi-scanner"
+        config HSI_AP_PASSWORD
+            string "Fallback access point password (8+ characters, empty for open)"
+            default "hyperspectral"
+        config HSI_NTP_SERVER
+            string "NTP server"
+            default "pool.ntp.org"
+        config HSI_TIMEZONE
+            string "POSIX time zone"
+            default "UTC0"
+        config HSI_HTTP_PORT
+            int "Web server port"
+            default 80
+    endmenu
+
+    menu "HQ Camera (IMX477)"
+        config HSI_CAM_I2C_PORT
+            int "I2C port"
+            default 0
+        config HSI_CAM_I2C_SDA
+            int "Camera I2C SDA GPIO"
+            default 7
+            help
+                Check your board's schematic. Waveshare ESP32-P4 boards share
+                GPIO7/GPIO8 between the camera connector and other I2C devices.
+        config HSI_CAM_I2C_SCL
+            int "Camera I2C SCL GPIO"
+            default 8
+        config HSI_CAM_ENABLE_GPIO
+            int "Camera power enable GPIO (-1 if the board ties it on)"
+            default -1
+            help
+                The HQ Camera's regulators stay off until the CAM_GPIO pin on
+                the 15-pin connector is driven high.
+        config HSI_CAM_ROTATE_180
+            bool "Rotate image 180 degrees (as the Pi scanner did)"
+            default y
+        config HSI_MIPI_LDO_CHAN
+            int "Internal LDO channel for the MIPI PHY"
+            default 3
+        config HSI_MIPI_LDO_MV
+            int "MIPI PHY LDO voltage (mV)"
+            default 2500
+    endmenu
+
+    menu "microSD card"
+        config HSI_SD_LDO_CHAN
+            int "Internal LDO channel powering the SD card IO (-1 if powered externally)"
+            default 4
+    endmenu
+
+endmenu

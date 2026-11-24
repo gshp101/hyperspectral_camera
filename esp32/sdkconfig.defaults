@@ -1,0 +1,30 @@
+CONFIG_IDF_TARGET="esp32p4"
+
+# Flash and partitions (the DEV-KIT has 16 MB flash)
+CONFIG_ESPTOOLPY_FLASHSIZE_16MB=y
+CONFIG_PARTITION_TABLE_CUSTOM=y
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
+
+# 32 MB in-package PSRAM holds the raw frame buffers
+CONFIG_SPIRAM=y
+# 200 MHz PSRAM needs the experimental flag on IDF 5.5, as in Espressif's camera examples
+CONFIG_IDF_EXPERIMENTAL_FEATURES=y
+CONFIG_SPIRAM_SPEED_200M=y
+
+# Camera: driver callbacks stay safe while flash cache is off (SD/flash writes)
+CONFIG_CAM_CTLR_MIPI_CSI_ISR_CACHE_SAFE=y
+
+# Wi-Fi through the ESP32-C6 (ESP-Hosted over SDIO)
+CONFIG_ESP_HOSTED_HOST_TRANSPORT_BUS_SDIO=y
+CONFIG_SLAVE_IDF_TARGET_ESP32C6=y
+
+# FAT on the SD card: long file names, exFAT for large cards, bigger write buffers
+CONFIG_FATFS_LFN_HEAP=y
+CONFIG_FATFS_USE_FASTSEEK=y
+CONFIG_FATFS_VFS_FSTAT_BLKSIZE=4096
+
+# Web server
+CONFIG_HTTPD_MAX_REQ_HDR_LEN=1024
+CONFIG_HTTPD_MAX_URI_LEN=512
+
+CONFIG_FREERTOS_HZ=1000

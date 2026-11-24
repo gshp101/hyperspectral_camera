@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Hyperspectral scanner</title>
+<style>
+  body { font-family: system-ui, sans-serif; margin: 16px; max-width: 720px; }
+  fieldset { margin-bottom: 16px; }
+  label { display: inline-block; min-width: 110px; }
+  input, select { margin: 4px 0; }
+  #status, #result { white-space: pre-wrap; font-family: monospace; background: #f3f3f3; padding: 8px; }
+  td { padding: 2px 8px; }
+</style>
+</head>
+<body>
+<h1>Hyperspectral scanner</h1>
+<p>Milestone 1: capture single raw frames from the HQ Camera to the SD card.</p>
+
+<fieldset>
+  <legend>Capture raw frame</legend>
+  <label for="exposure">Exposure (µs)</label> <input id="exposure" type="number" value="66666" min="100" max="1000000"><br>
+  <label for="gain">Analogue gain</label> <input id="gain" type="number" value="1.0" step="0.1" min="1" max="22"><br>
+  <label for="pattern">Test pattern</label>
+  <select id="pattern">
+    <option value="0">Off (real image)</option>
+    <option value="2">Colour bars</option>
+    <option value="3">Grey bars</option>
+    <option value="1">Solid colour</option>
+    <option value="4">PN9 noise</option>
+  </select><br>
+  <label for="comment">Comment</label> <input id="comment" type="text" size="40"><br>
+  <button id="capture">Capture</button>
+  <div id="result"></div>
+</fieldset>
+
+<fieldset>
+  <legend>Status</legend>
+  <div id="status">loading…</div>
+</fieldset>
+
+<fieldset>
+  <legend>Files on the SD card</legend>
+  <table id="files"></table>
+</fieldset>
+
+<script>
+async function refreshStatus() {
+  try {
+    const r = await fetch('/api/status');
+    document.getElementById('status').textContent = JSON.stringify(await r.json(), null, 1);
+  } catch (e) { document.getElementById('status').textContent = 'unreachable'; }
+}
+async function refreshFiles() {
+  const r = await fetch('/api/files');
+  const files = (await r.json()).sort((a, b) => b.name.localeCompare(a.name));
+  const t = document.getElementById('files');
+  t.innerHTML = '';
+  for (const f of files) {
+    const row = t.insertRow();
+    const a = document.createElement('a');
+    a.href = '/files/' + encodeURIComponent(f.name);
+    a.textContent = f.name;
+    row.insertCell().appendChild(a);
+    row.insertCell().textContent = (f.bytes / 1048576).toFixed(2) + ' MB';
+  }
+}
+document.getElementById('capture').onclick = async () => {
+  const b = document.getElementById('capture');
+  const out = document.getElementById('result');
+  b.disabled = true;
+  out.textContent = 'capturing…';
+  const q = new URLSearchParams({
+    exposure: document.getElementById('exposure').value,
+    gain: document.getElementById('gain').value,
+    pattern: document.getElementById('pattern').value,
+    comment: document.getElementById('comment').value,
+  });
+  try {
+    const r = await fetch('/api/capture?' + q);
+    out.textContent = JSON.stringify(await r.json(), null, 1);
+  } catch (e) { out.textContent = 'capture failed: ' + e; }
+  b.disabled = false;
+  refreshFiles();
+};
+// Give the scanner the browser's clock (needed when it runs as an access point).
+fetch('/api/time?epoch_ms=' + Date.now(), {method: 'POST'}).finally(refreshStatus);
+refreshFiles();
+setInterval(refreshStatus, 5000);
+</script>
+</body>
+</html>

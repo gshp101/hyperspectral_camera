@@ -1,0 +1,6 @@
+dependencies:
+  idf: ">=5.5"
+  # The P4 has no radio. esp_wifi_remote provides the normal esp_wifi API and
+  # esp_hosted carries it over SDIO to the ESP32-C6 on the board.
+  espressif/esp_wifi_remote: ">=1.0"
+  espressif/esp_hosted: ">=2.0"

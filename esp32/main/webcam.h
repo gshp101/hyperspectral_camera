@@ -16,6 +16,9 @@ void webcam_get_info(uint16_t *width, uint16_t *height, float *fps, uint32_t *fr
 // ESP_ERR_INVALID_SIZE if buf is too small.
 esp_err_t webcam_get_jpeg(uint8_t *buf, size_t buf_size, size_t *len, uint32_t *seq, uint32_t timeout_ms);
 
+// Copies the newest JPEG frame without waiting (for overview frames).
+esp_err_t webcam_copy_latest_jpeg(uint8_t *buf, size_t buf_size, size_t *len);
+
 // Waits for a frame newer than *seq, decodes it with the hardware JPEG decoder and
 // returns the RGB888 image (valid until the next call). Width and height are the
 // camera's; the buffer's row stride is *stride pixels.

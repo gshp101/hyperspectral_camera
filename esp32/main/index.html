@@ -9,13 +9,13 @@
   fieldset { margin-bottom: 16px; }
   label { display: inline-block; min-width: 110px; }
   input, select { margin: 4px 0; }
-  #status, #result, #motor { white-space: pre-wrap; font-family: monospace; background: #f3f3f3; padding: 8px; }
+  #status, #result, #motor, #scan { white-space: pre-wrap; font-family: monospace; background: #f3f3f3; padding: 8px; }
   td { padding: 2px 8px; }
 </style>
 </head>
 <body>
 <h1>Hyperspectral scanner</h1>
-<p>Viewfinder, single raw frames from the HQ Camera to the SD card, and the scan motor.</p>
+<p>Viewfinder, hyperspectral scans, single raw frames and the scan motor.</p>
 
 <fieldset>
   <legend>Viewfinder (USB webcam)</legend>
@@ -25,6 +25,16 @@
     <div id="bandBottom" style="position:absolute; left:0; right:0; border-top:2px solid red"></div>
   </div>
   <div><button id="webcamTest">Test line grab</button> <span id="webcamInfo"></span></div>
+</fieldset>
+
+<fieldset>
+  <legend>Scan</legend>
+  <label for="scanAngle">Sweep (°)</label> <input id="scanAngle" type="number" value="90" min="1" max="90"><br>
+  <label for="scanExposure">Exposure (µs)</label> <input id="scanExposure" type="number" value="66666" min="100" max="1000000"><br>
+  <label for="scanComment">Comment</label> <input id="scanComment" type="text" size="40"><br>
+  <button id="scanStart">Start scan</button> <button id="scanCancel">Cancel</button>
+  <progress id="scanProgress" value="0" max="1" style="width:100%"></progress>
+  <div id="scan">idle</div>
 </fieldset>
 
 <fieldset>
@@ -144,6 +154,32 @@ document.getElementById('webcamTest').onclick = async () => {
   document.getElementById('webcamInfo').textContent = JSON.stringify(await r.json());
 };
 startViewfinder();
+let lastScanState = '';
+async function refreshScan() {
+  try {
+    const r = await fetch('/api/scan/status');
+    const st = await r.json();
+    const p = document.getElementById('scanProgress');
+    p.max = Math.max(st.frames_expected, 1);
+    p.value = st.frames;
+    document.getElementById('scan').textContent = JSON.stringify(st, null, 1);
+    if (st.state !== lastScanState && ['done', 'failed', 'cancelled'].includes(st.state)) refreshFiles();
+    lastScanState = st.state;
+  } catch (e) { document.getElementById('scan').textContent = 'unreachable'; }
+}
+document.getElementById('scanStart').onclick = async () => {
+  const q = new URLSearchParams({
+    angle: document.getElementById('scanAngle').value,
+    exposure: document.getElementById('scanExposure').value,
+    comment: document.getElementById('scanComment').value,
+  });
+  const r = await fetch('/api/scan/start?' + q, {method: 'POST'});
+  if (!r.ok) alert((await r.json()).error);
+  refreshScan();
+};
+document.getElementById('scanCancel').onclick = () => fetch('/api/scan/cancel', {method: 'POST'}).then(refreshScan);
+setInterval(refreshScan, 1000);
+refreshScan();
 // Give the scanner the browser's clock (needed when it runs as an access point).
 fetch('/api/time?epoch_ms=' + Date.now(), {method: 'POST'}).finally(refreshStatus);
 refreshFiles();

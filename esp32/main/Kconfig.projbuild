@@ -105,6 +105,28 @@ menu "Hyperspectral scanner"
             default 318
     endmenu
 
+    menu "Scan"
+        config HSI_SCAN_ANGLE_DEG
+            int "Default sweep (degrees, at most 90)"
+            default 90
+        config HSI_WINDOW_X0
+            int "Raw window left (even)"
+            default 466
+            help
+                Part of each 2028x1080 raw frame saved during a scan. Defaults are
+                the Pi calibration hsiInfo ul/lr padded by 2 pixels, as
+                captureServer.py did. Set all four to 0 to save whole frames.
+        config HSI_WINDOW_Y0
+            int "Raw window top (even)"
+            default 198
+        config HSI_WINDOW_X1
+            int "Raw window right (even, exclusive)"
+            default 738
+        config HSI_WINDOW_Y1
+            int "Raw window bottom (even, exclusive)"
+            default 786
+    endmenu
+
     menu "microSD card"
         config HSI_SD_LDO_CHAN
             int "Internal LDO channel powering the SD card IO (-1 if powered externally)"

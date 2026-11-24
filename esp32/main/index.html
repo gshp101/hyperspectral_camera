@@ -15,7 +15,17 @@
 </head>
 <body>
 <h1>Hyperspectral scanner</h1>
-<p>Capture single raw frames from the HQ Camera to the SD card, and drive the scan motor.</p>
+<p>Viewfinder, single raw frames from the HQ Camera to the SD card, and the scan motor.</p>
+
+<fieldset>
+  <legend>Viewfinder (USB webcam)</legend>
+  <div id="vfwrap" style="position:relative; display:inline-block; max-width:100%">
+    <img id="vf" alt="webcam viewfinder" style="display:block; max-width:100%">
+    <div id="bandTop" style="position:absolute; left:0; right:0; border-top:2px solid red"></div>
+    <div id="bandBottom" style="position:absolute; left:0; right:0; border-top:2px solid red"></div>
+  </div>
+  <div><button id="webcamTest">Test line grab</button> <span id="webcamInfo"></span></div>
+</fieldset>
 
 <fieldset>
   <legend>Capture raw frame</legend>
@@ -109,6 +119,31 @@ document.getElementById('move').onclick = () =>
 document.getElementById('motorSleep').onclick = () => motorPost('/api/motor/sleep');
 setInterval(refreshMotor, 1000);
 refreshMotor();
+let band = null;
+function placeBand() {
+  const img = document.getElementById('vf');
+  if (!band || !img.naturalHeight) return;
+  const k = img.clientHeight / img.naturalHeight;
+  document.getElementById('bandTop').style.top = (band[0] * k) + 'px';
+  document.getElementById('bandBottom').style.top = (band[1] * k) + 'px';
+}
+async function startViewfinder() {
+  const r = await fetch('/api/webcam/status');
+  const w = await r.json();
+  band = [w.band_top, w.band_bottom];
+  document.getElementById('webcamInfo').textContent =
+    w.connected ? `${w.width}x${w.height} at ${w.fps} fps` : 'no webcam connected';
+  const img = document.getElementById('vf');
+  img.onload = placeBand;
+  img.src = `${location.protocol}//${location.hostname}:${w.stream_port}/webcam`;
+}
+window.addEventListener('resize', placeBand);
+setInterval(placeBand, 1000);
+document.getElementById('webcamTest').onclick = async () => {
+  const r = await fetch('/api/webcam/test');
+  document.getElementById('webcamInfo').textContent = JSON.stringify(await r.json());
+};
+startViewfinder();
 // Give the scanner the browser's clock (needed when it runs as an access point).
 fetch('/api/time?epoch_ms=' + Date.now(), {method: 'POST'}).finally(refreshStatus);
 refreshFiles();

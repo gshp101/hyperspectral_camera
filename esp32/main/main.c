@@ -1,9 +1,10 @@
 // ESP32-P4 hyperspectral scanner: Wi-Fi, SD card, web page, raw frame capture
-// from the Raspberry Pi HQ Camera (IMX477) and the scan motor.
+// from the Raspberry Pi HQ Camera (IMX477), the scan motor and the USB webcam.
 #include "esp_log.h"
 #include "nvs_flash.h"
 #include "hsi_camera.h"
 #include "stepper.h"
+#include "webcam.h"
 #include "sdkconfig.h"
 #include "storage.h"
 #include "net.h"
@@ -41,6 +42,9 @@ void app_main(void)
     };
     if (stepper_init(&motor) != ESP_OK) {
         ESP_LOGE(TAG, "motor not available");
+    }
+    if (webcam_init() != ESP_OK) {
+        ESP_LOGE(TAG, "webcam (USB host) not available");
     }
     ESP_ERROR_CHECK(net_init());
     ESP_ERROR_CHECK(web_start());

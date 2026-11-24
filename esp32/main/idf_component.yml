@@ -4,3 +4,5 @@ dependencies:
   # esp_hosted carries it over SDIO to the ESP32-C6 on the board.
   espressif/esp_wifi_remote: ">=1.0"
   espressif/esp_hosted: ">=2.0"
+  # UVC (USB video class) host driver for the webcam
+  espressif/usb_host_uvc: "^2.4"

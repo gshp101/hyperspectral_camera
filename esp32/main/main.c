@@ -1,8 +1,10 @@
-// ESP32-P4 hyperspectral scanner, milestone 1: Wi-Fi, SD card, web page and
-// single raw frame capture from the Raspberry Pi HQ Camera (IMX477).
+// ESP32-P4 hyperspectral scanner: Wi-Fi, SD card, web page, raw frame capture
+// from the Raspberry Pi HQ Camera (IMX477) and the scan motor.
 #include "esp_log.h"
 #include "nvs_flash.h"
 #include "hsi_camera.h"
+#include "stepper.h"
+#include "sdkconfig.h"
 #include "storage.h"
 #include "net.h"
 #include "web.h"
@@ -24,6 +26,21 @@ void app_main(void)
     }
     if (hsi_camera_init() != ESP_OK) {
         ESP_LOGE(TAG, "camera not available");
+    }
+    stepper_config_t motor = {
+        .step_gpio = CONFIG_HSI_MOTOR_STEP_GPIO,
+        .dir_gpio = CONFIG_HSI_MOTOR_DIR_GPIO,
+        .sleep_gpio = CONFIG_HSI_MOTOR_SLEEP_GPIO,
+        .microstep_gpio = CONFIG_HSI_MOTOR_MICROSTEP_GPIO,
+        .switch_a_gpio = CONFIG_HSI_MOTOR_SWITCH_A_GPIO,
+        .switch_b_gpio = CONFIG_HSI_MOTOR_SWITCH_B_GPIO,
+        .switch_active_high = CONFIG_HSI_MOTOR_SWITCH_ACTIVE_HIGH,
+        .switch_pull_down = CONFIG_HSI_MOTOR_SWITCH_ACTIVE_HIGH,
+        .range_deg = CONFIG_HSI_MOTOR_RANGE_DEG,
+        .full_step_deg = 1.8f,
+    };
+    if (stepper_init(&motor) != ESP_OK) {
+        ESP_LOGE(TAG, "motor not available");
     }
     ESP_ERROR_CHECK(net_init());
     ESP_ERROR_CHECK(web_start());

@@ -13,6 +13,7 @@
 #include "esp_timer.h"
 #include "sdkconfig.h"
 #include "hsi_camera.h"
+#include "stepper.h"
 #include "storage.h"
 #include "net.h"
 #include "web.h"
@@ -270,6 +271,94 @@ static esp_err_t file_get(httpd_req_t *req)
     return err;
 }
 
+// ---- Scan motor ----
+// Motor jobs (calibrate takes ~30 s) run in their own task so the web page stays live.
+
+typedef enum { JOB_NONE, JOB_CALIBRATE, JOB_MOVE } motor_job_t;
+static volatile motor_job_t s_motor_job;
+static volatile float s_motor_target;
+static char s_motor_result[96] = "";
+
+static void motor_task(void *arg)
+{
+    motor_job_t job = (motor_job_t)(uintptr_t)arg;
+    if (job == JOB_CALIBRATE) {
+        esp_err_t err = stepper_calibrate(true);
+        snprintf(s_motor_result, sizeof(s_motor_result), "calibrate: %s", err == ESP_OK ? "ok" : "failed");
+    } else if (job == JOB_MOVE) {
+        stepper_set_fine(true);
+        stepper_result_t r = stepper_rotate_to(s_motor_target, 10);
+        snprintf(s_motor_result, sizeof(s_motor_result), "move to %.2f: %s", s_motor_target,
+                 r == STEPPER_OK ? "ok" : r == STEPPER_SWITCH_HIT ? "stopped by limit switch" : "motor disabled");
+    }
+    s_motor_job = JOB_NONE;
+    vTaskDelete(NULL);
+}
+
+static bool start_motor_job(motor_job_t job)
+{
+    if (s_motor_job != JOB_NONE) {
+        return false;
+    }
+    s_motor_job = job;
+    if (xTaskCreate(motor_task, "motor", 4096, (void *)(uintptr_t)job, 5, NULL) != pdPASS) {
+        s_motor_job = JOB_NONE;
+        return false;
+    }
+    return true;
+}
+
+static esp_err_t motor_status_get(httpd_req_t *req)
+{
+    stepper_status_t st;
+    stepper_get_status(&st);
+    char err[128], res[128], body[512];
+    json_escape(st.last_error, err, sizeof(err));
+    json_escape(s_motor_result, res, sizeof(res));
+    const char *busy = s_motor_job == JOB_CALIBRATE ? "calibrating" : s_motor_job == JOB_MOVE ? "moving" : "idle";
+    snprintf(body, sizeof(body),
+             "{\"state\":\"%s\",\"calibrated\":%s,\"angle_deg\":%.4f,\"deg_per_step\":%.4f,\"sleeping\":%s,"
+             "\"disabled\":%s,\"switch_a\":%s,\"switch_b\":%s,\"last_error\":\"%s\",\"last_result\":\"%s\"}",
+             busy, st.calibrated ? "true" : "false", st.angle_deg, st.deg_per_step, st.sleeping ? "true" : "false",
+             st.disabled ? "true" : "false", st.switch_a ? "true" : "false", st.switch_b ? "true" : "false", err, res);
+    return send_json(req, "200 OK", body);
+}
+
+static esp_err_t motor_calibrate_post(httpd_req_t *req)
+{
+    if (!start_motor_job(JOB_CALIBRATE)) {
+        return send_json(req, "409 Conflict", "{\"error\":\"motor busy\"}");
+    }
+    return send_json(req, "202 Accepted", "{\"started\":\"calibrate\"}");
+}
+
+// POST /api/motor/move?angle=-45  (absolute degrees, 0 = centre)
+static esp_err_t motor_move_post(httpd_req_t *req)
+{
+    char v[24];
+    if (!query_param(req, "angle", v, sizeof(v))) {
+        return send_json(req, "400 Bad Request", "{\"error\":\"angle missing\"}");
+    }
+    float a = strtof(v, NULL);
+    if (a < -90.0f || a > 90.0f) {
+        return send_json(req, "400 Bad Request", "{\"error\":\"angle must be within +/-90\"}");
+    }
+    s_motor_target = a;
+    if (!start_motor_job(JOB_MOVE)) {
+        return send_json(req, "409 Conflict", "{\"error\":\"motor busy\"}");
+    }
+    return send_json(req, "202 Accepted", "{\"started\":\"move\"}");
+}
+
+static esp_err_t motor_sleep_post(httpd_req_t *req)
+{
+    if (s_motor_job != JOB_NONE) {
+        return send_json(req, "409 Conflict", "{\"error\":\"motor busy\"}");
+    }
+    stepper_sleep();
+    return send_json(req, "200 OK", "{\"ok\":true}");
+}
+
 esp_err_t web_start(void)
 {
     s_capture_lock = xSemaphoreCreateMutex();
@@ -277,7 +366,7 @@ esp_err_t web_start(void)
     cfg.server_port = CONFIG_HSI_HTTP_PORT;
     cfg.uri_match_fn = httpd_uri_match_wildcard;
     cfg.stack_size = 8192;
-    cfg.max_uri_handlers = 12;
+    cfg.max_uri_handlers = 16;
     httpd_handle_t server = NULL;
     esp_err_t err = httpd_start(&server, &cfg);
     if (err != ESP_OK) {
@@ -290,6 +379,10 @@ esp_err_t web_start(void)
         {.uri = "/api/capture", .method = HTTP_GET, .handler = capture_get},
         {.uri = "/api/files", .method = HTTP_GET, .handler = files_get},
         {.uri = "/files/*", .method = HTTP_GET, .handler = file_get},
+        {.uri = "/api/motor/status", .method = HTTP_GET, .handler = motor_status_get},
+        {.uri = "/api/motor/calibrate", .method = HTTP_POST, .handler = motor_calibrate_post},
+        {.uri = "/api/motor/move", .method = HTTP_POST, .handler = motor_move_post},
+        {.uri = "/api/motor/sleep", .method = HTTP_POST, .handler = motor_sleep_post},
     };
     for (size_t i = 0; i < sizeof(uris) / sizeof(uris[0]); i++) {
         httpd_register_uri_handler(server, &uris[i]);

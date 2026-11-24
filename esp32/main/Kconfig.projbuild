@@ -57,6 +57,33 @@ menu "Hyperspectral scanner"
             default 2500
     endmenu
 
+    menu "Scan motor (A4988)"
+        config HSI_MOTOR_STEP_GPIO
+            int "STEP GPIO"
+            default 20
+        config HSI_MOTOR_DIR_GPIO
+            int "DIR GPIO"
+            default 21
+        config HSI_MOTOR_SLEEP_GPIO
+            int "SLEEP GPIO (-1 if tied awake)"
+            default 22
+        config HSI_MOTOR_MICROSTEP_GPIO
+            int "MS1-MS3 GPIO, high = 1/16 step (-1 if hard-wired)"
+            default 23
+        config HSI_MOTOR_SWITCH_A_GPIO
+            int "Limit switch A GPIO (white on the Pi)"
+            default 45
+        config HSI_MOTOR_SWITCH_B_GPIO
+            int "Limit switch B GPIO (green on the Pi)"
+            default 46
+        config HSI_MOTOR_SWITCH_ACTIVE_HIGH
+            bool "Switches read high when closed (as on the Pi)"
+            default y
+        config HSI_MOTOR_RANGE_DEG
+            int "Travel between the switches (degrees)"
+            default 160
+    endmenu
+
     menu "microSD card"
         config HSI_SD_LDO_CHAN
             int "Internal LDO channel powering the SD card IO (-1 if powered externally)"

@@ -9,13 +9,13 @@
   fieldset { margin-bottom: 16px; }
   label { display: inline-block; min-width: 110px; }
   input, select { margin: 4px 0; }
-  #status, #result { white-space: pre-wrap; font-family: monospace; background: #f3f3f3; padding: 8px; }
+  #status, #result, #motor { white-space: pre-wrap; font-family: monospace; background: #f3f3f3; padding: 8px; }
   td { padding: 2px 8px; }
 </style>
 </head>
 <body>
 <h1>Hyperspectral scanner</h1>
-<p>Milestone 1: capture single raw frames from the HQ Camera to the SD card.</p>
+<p>Capture single raw frames from the HQ Camera to the SD card, and drive the scan motor.</p>
 
 <fieldset>
   <legend>Capture raw frame</legend>
@@ -32,6 +32,15 @@
   <label for="comment">Comment</label> <input id="comment" type="text" size="40"><br>
   <button id="capture">Capture</button>
   <div id="result"></div>
+</fieldset>
+
+<fieldset>
+  <legend>Scan motor</legend>
+  <button id="calibrate">Calibrate</button>
+  <label for="angle">Angle (°)</label> <input id="angle" type="number" value="0" step="0.1" min="-90" max="90">
+  <button id="move">Move</button>
+  <button id="motorSleep">Sleep</button>
+  <div id="motor">loading…</div>
 </fieldset>
 
 <fieldset>
@@ -83,6 +92,23 @@ document.getElementById('capture').onclick = async () => {
   b.disabled = false;
   refreshFiles();
 };
+async function refreshMotor() {
+  try {
+    const r = await fetch('/api/motor/status');
+    document.getElementById('motor').textContent = JSON.stringify(await r.json(), null, 1);
+  } catch (e) { document.getElementById('motor').textContent = 'unreachable'; }
+}
+async function motorPost(path) {
+  const r = await fetch(path, {method: 'POST'});
+  if (!r.ok) alert((await r.json()).error);
+  refreshMotor();
+}
+document.getElementById('calibrate').onclick = () => motorPost('/api/motor/calibrate');
+document.getElementById('move').onclick = () =>
+  motorPost('/api/motor/move?angle=' + encodeURIComponent(document.getElementById('angle').value));
+document.getElementById('motorSleep').onclick = () => motorPost('/api/motor/sleep');
+setInterval(refreshMotor, 1000);
+refreshMotor();
 // Give the scanner the browser's clock (needed when it runs as an access point).
 fetch('/api/time?epoch_ms=' + Date.now(), {method: 'POST'}).finally(refreshStatus);
 refreshFiles();

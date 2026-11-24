@@ -189,6 +189,22 @@ esp_err_t webcam_get_jpeg(uint8_t *buf, size_t buf_size, size_t *len, uint32_t *
     return err;
 }
 
+esp_err_t webcam_copy_latest_jpeg(uint8_t *buf, size_t buf_size, size_t *len)
+{
+    esp_err_t err = ESP_OK;
+    xSemaphoreTake(s.lock, portMAX_DELAY);
+    if (s.latest_len == 0) {
+        err = ESP_ERR_NOT_FOUND;
+    } else if (s.latest_len > buf_size) {
+        err = ESP_ERR_INVALID_SIZE;
+    } else {
+        memcpy(buf, s.latest, s.latest_len);
+        *len = s.latest_len;
+    }
+    xSemaphoreGive(s.lock);
+    return err;
+}
+
 esp_err_t webcam_decode(uint32_t *seq, uint32_t timeout_ms, const uint8_t **rgb,
                         uint16_t *width, uint16_t *height, uint16_t *stride)
 {

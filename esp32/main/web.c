@@ -15,6 +15,7 @@
 #include "hsi_camera.h"
 #include "stepper.h"
 #include "webcam.h"
+#include "scan.h"
 #include "esp_heap_caps.h"
 #include "storage.h"
 #include "net.h"
@@ -135,6 +136,9 @@ static esp_err_t capture_get(httpd_req_t *req)
 {
     if (!hsi_camera_ready() || !storage_ready()) {
         return send_json(req, "503 Service Unavailable", "{\"error\":\"camera or SD card not ready\"}");
+    }
+    if (scan_running()) {
+        return send_json(req, "409 Conflict", "{\"error\":\"a scan is running\"}");
     }
     char v[128];
     hsi_capture_params_t p = {.exposure_us = 66666, .analog_gain = 1.0f, .pattern = IMX477_TEST_PATTERN_OFF};
@@ -299,7 +303,7 @@ static void motor_task(void *arg)
 
 static bool start_motor_job(motor_job_t job)
 {
-    if (s_motor_job != JOB_NONE) {
+    if (s_motor_job != JOB_NONE || scan_running()) {
         return false;
     }
     s_motor_job = job;
@@ -354,7 +358,7 @@ static esp_err_t motor_move_post(httpd_req_t *req)
 
 static esp_err_t motor_sleep_post(httpd_req_t *req)
 {
-    if (s_motor_job != JOB_NONE) {
+    if (s_motor_job != JOB_NONE || scan_running()) {
         return send_json(req, "409 Conflict", "{\"error\":\"motor busy\"}");
     }
     stepper_sleep();
@@ -456,6 +460,82 @@ static esp_err_t start_stream_server(void)
     return httpd_register_uri_handler(server, &u);
 }
 
+// ---- Scan ----
+
+// POST /api/scan/start?angle=90&exposure=66666&gain=1&comment=...&window=466,198,738,786
+static esp_err_t scan_start_post(httpd_req_t *req)
+{
+    if (s_motor_job != JOB_NONE) {
+        return send_json(req, "409 Conflict", "{\"error\":\"motor busy\"}");
+    }
+    scan_params_t p = {
+        .angle_deg = CONFIG_HSI_SCAN_ANGLE_DEG,
+        .exposure_us = 66666,
+        .analog_gain = 1.0f,
+        .win_x0 = CONFIG_HSI_WINDOW_X0,
+        .win_y0 = CONFIG_HSI_WINDOW_Y0,
+        .win_x1 = CONFIG_HSI_WINDOW_X1,
+        .win_y1 = CONFIG_HSI_WINDOW_Y1,
+    };
+    char v[96];
+    if (query_param(req, "angle", v, sizeof(v))) {
+        p.angle_deg = strtof(v, NULL);
+    }
+    if (query_param(req, "exposure", v, sizeof(v))) {
+        long e = atol(v);
+        if (e >= 100 && e <= 1000000) {
+            p.exposure_us = e;
+        }
+    }
+    if (query_param(req, "gain", v, sizeof(v))) {
+        float g = strtof(v, NULL);
+        if (g >= 1.0f && g <= 22.0f) {
+            p.analog_gain = g;
+        }
+    }
+    if (query_param(req, "window", v, sizeof(v))) {
+        unsigned a, b, c, d;
+        if (sscanf(v, "%u,%u,%u,%u", &a, &b, &c, &d) == 4) {
+            p.win_x0 = a;
+            p.win_y0 = b;
+            p.win_x1 = c;
+            p.win_y1 = d;
+        }
+    }
+    query_param(req, "comment", p.comment, sizeof(p.comment));
+    esp_err_t err = scan_start(&p);
+    if (err == ESP_ERR_INVALID_STATE) {
+        return send_json(req, "409 Conflict", "{\"error\":\"scan already running\"}");
+    }
+    if (err == ESP_ERR_INVALID_ARG) {
+        return send_json(req, "400 Bad Request", "{\"error\":\"angle must be between 0 and 90\"}");
+    }
+    if (err != ESP_OK) {
+        return send_json(req, "500 Internal Server Error", "{\"error\":\"could not start scan\"}");
+    }
+    return send_json(req, "202 Accepted", "{\"started\":\"scan\"}");
+}
+
+static esp_err_t scan_status_get(httpd_req_t *req)
+{
+    scan_status_t st;
+    scan_get_status(&st);
+    char err[128], body[384];
+    json_escape(st.error, err, sizeof(err));
+    snprintf(body, sizeof(body),
+             "{\"state\":\"%s\",\"frames\":%d,\"frames_expected\":%d,\"angle_deg\":%.3f,\"elapsed_s\":%.1f,"
+             "\"last_step_ms\":%lu,\"file\":\"%s\",\"error\":\"%s\"}",
+             scan_state_name(st.state), st.frames, st.frames_expected, st.angle_deg, st.elapsed_ms / 1000.0,
+             (unsigned long)st.last_step_ms, st.file, err);
+    return send_json(req, "200 OK", body);
+}
+
+static esp_err_t scan_cancel_post(httpd_req_t *req)
+{
+    scan_cancel();
+    return send_json(req, "200 OK", "{\"ok\":true}");
+}
+
 esp_err_t web_start(void)
 {
     s_capture_lock = xSemaphoreCreateMutex();
@@ -463,7 +543,7 @@ esp_err_t web_start(void)
     cfg.server_port = CONFIG_HSI_HTTP_PORT;
     cfg.uri_match_fn = httpd_uri_match_wildcard;
     cfg.stack_size = 8192;
-    cfg.max_uri_handlers = 20;
+    cfg.max_uri_handlers = 24;
     httpd_handle_t server = NULL;
     esp_err_t err = httpd_start(&server, &cfg);
     if (err != ESP_OK) {
@@ -482,6 +562,9 @@ esp_err_t web_start(void)
         {.uri = "/api/motor/sleep", .method = HTTP_POST, .handler = motor_sleep_post},
         {.uri = "/api/webcam/status", .method = HTTP_GET, .handler = webcam_status_get},
         {.uri = "/api/webcam/test", .method = HTTP_GET, .handler = webcam_test_get},
+        {.uri = "/api/scan/start", .method = HTTP_POST, .handler = scan_start_post},
+        {.uri = "/api/scan/status", .method = HTTP_GET, .handler = scan_status_get},
+        {.uri = "/api/scan/cancel", .method = HTTP_POST, .handler = scan_cancel_post},
     };
     for (size_t i = 0; i < sizeof(uris) / sizeof(uris[0]); i++) {
         httpd_register_uri_handler(server, &uris[i]);

@@ -16,6 +16,7 @@
 #include "stepper.h"
 #include "webcam.h"
 #include "scan.h"
+#include "calibration.h"
 #include "esp_heap_caps.h"
 #include "storage.h"
 #include "net.h"
@@ -378,7 +379,7 @@ static esp_err_t webcam_status_get(httpd_req_t *req)
              "{\"connected\":%s,\"width\":%u,\"height\":%u,\"fps\":%.1f,\"frames\":%lu,"
              "\"stream_port\":%d,\"band_top\":%d,\"band_bottom\":%d}",
              webcam_connected() ? "true" : "false", w, h, fps, (unsigned long)frames,
-             CONFIG_HSI_HTTP_PORT + 1, CONFIG_HSI_FOV_BAND_TOP, CONFIG_HSI_FOV_BAND_BOTTOM);
+             CONFIG_HSI_HTTP_PORT + 1, calibration_get()->band_top, calibration_get()->band_bottom);
     return send_json(req, "200 OK", body);
 }
 
@@ -460,6 +461,45 @@ static esp_err_t start_stream_server(void)
     return httpd_register_uri_handler(server, &u);
 }
 
+// ---- Calibration ----
+
+static esp_err_t calibration_get_handler(httpd_req_t *req)
+{
+    const calibration_t *c = calibration_get();
+    char src[2 * sizeof(c->source)];
+    json_escape(c->source, src, sizeof(src));
+    char body[384];
+    snprintf(body, sizeof(body),
+             "{\"loaded\":%s,\"source\":\"%s\",\"window\":{\"ul\":[%u,%u],\"lr\":[%u,%u]},"
+             "\"scan_band\":[%d,%d],\"target\":{\"center\":[%d,%d],\"radius\":%d},\"webcam_offset\":[%d,%d]}",
+             c->loaded ? "true" : "false", src, c->win_x0, c->win_y0, c->win_x1, c->win_y1, c->band_top,
+             c->band_bottom, c->target_x, c->target_y, c->target_r, c->offset_x, c->offset_y);
+    return send_json(req, "200 OK", body);
+}
+
+// POST /api/calibration/offset?col=..&row=.. : the point on the webcam image the HQ camera
+// target really is, like setWebcamOffset on the Pi page.
+static esp_err_t calibration_offset_post(httpd_req_t *req)
+{
+    char v[16];
+    if (!query_param(req, "col", v, sizeof(v))) {
+        return send_json(req, "400 Bad Request", "{\"error\":\"col and row are needed\"}");
+    }
+    int col = atoi(v);
+    if (!query_param(req, "row", v, sizeof(v))) {
+        return send_json(req, "400 Bad Request", "{\"error\":\"col and row are needed\"}");
+    }
+    int row = atoi(v);
+    esp_err_t err = calibration_set_offset_at(col, row);
+    if (err == ESP_ERR_INVALID_STATE) {
+        return send_json(req, "409 Conflict", "{\"error\":\"no calibration.json loaded\"}");
+    }
+    if (err != ESP_OK) {
+        return send_json(req, "500 Internal Server Error", "{\"error\":\"could not save calibration.json\"}");
+    }
+    return calibration_get_handler(req);
+}
+
 // ---- Scan ----
 
 // POST /api/scan/start?angle=90&exposure=66666&gain=1&comment=...&window=466,198,738,786
@@ -472,10 +512,10 @@ static esp_err_t scan_start_post(httpd_req_t *req)
         .angle_deg = CONFIG_HSI_SCAN_ANGLE_DEG,
         .exposure_us = 66666,
         .analog_gain = 1.0f,
-        .win_x0 = CONFIG_HSI_WINDOW_X0,
-        .win_y0 = CONFIG_HSI_WINDOW_Y0,
-        .win_x1 = CONFIG_HSI_WINDOW_X1,
-        .win_y1 = CONFIG_HSI_WINDOW_Y1,
+        .win_x0 = calibration_get()->win_x0,
+        .win_y0 = calibration_get()->win_y0,
+        .win_x1 = calibration_get()->win_x1,
+        .win_y1 = calibration_get()->win_y1,
     };
     char v[96];
     if (query_param(req, "angle", v, sizeof(v))) {
@@ -565,6 +605,8 @@ esp_err_t web_start(void)
         {.uri = "/api/scan/start", .method = HTTP_POST, .handler = scan_start_post},
         {.uri = "/api/scan/status", .method = HTTP_GET, .handler = scan_status_get},
         {.uri = "/api/scan/cancel", .method = HTTP_POST, .handler = scan_cancel_post},
+        {.uri = "/api/calibration", .method = HTTP_GET, .handler = calibration_get_handler},
+        {.uri = "/api/calibration/offset", .method = HTTP_POST, .handler = calibration_offset_post},
     };
     for (size_t i = 0; i < sizeof(uris) / sizeof(uris[0]); i++) {
         httpd_register_uri_handler(server, &uris[i]);

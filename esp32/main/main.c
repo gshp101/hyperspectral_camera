@@ -7,6 +7,7 @@
 #include "webcam.h"
 #include "sdkconfig.h"
 #include "storage.h"
+#include "calibration.h"
 #include "net.h"
 #include "web.h"
 
@@ -25,6 +26,7 @@ void app_main(void)
     if (storage_init() != ESP_OK) {
         ESP_LOGE(TAG, "SD card not available");
     }
+    calibration_load();   // falls back to the Kconfig window and band without calibration.json
     if (hsi_camera_init() != ESP_OK) {
         ESP_LOGE(TAG, "camera not available");
     }

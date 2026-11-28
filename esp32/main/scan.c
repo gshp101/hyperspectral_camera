@@ -11,6 +11,7 @@
 #include "hsi_camera.h"
 #include "stepper.h"
 #include "webcam.h"
+#include "calibration.h"
 #include "storage.h"
 #include "scan.h"
 
@@ -170,14 +171,21 @@ static void scan_task(void *arg)
     char ts[32];
     time_t now = time(NULL);
     strftime(ts, sizeof(ts), "%Y-%m-%dT%H:%M:%S", localtime(&now));
-    char hdr[640];
+    const char *cal_src = calibration_get()->loaded ? calibration_get()->source : "";
+    char cal[sizeof(calibration_get()->source)];
+    size_t k = 0;
+    for (const char *c = cal_src; *c && k < sizeof(cal) - 1; c++) {
+        cal[k++] = (*c == '"' || *c == '\\' || (unsigned char)*c < 0x20) ? ' ' : *c;
+    }
+    cal[k] = 0;
+    char hdr[768];
     int hl = snprintf(hdr, sizeof(hdr),
                       "{\"hsiscan\":\"esp32-1\",\"angle\":%.3f,\"exposure_us\":%lu,\"analog_gain\":%.3f,"
                       "\"sensor\":\"imx477\",\"raw_width\":%u,\"raw_height\":%u,\"bayer\":\"%s\","
                       "\"window\":{\"ul\":[%u,%u],\"lr\":[%u,%u]},\"webcam\":[%u,%u],"
-                      "\"deg_per_step\":%.5f,\"time\":\"%s\",\"comment\":\"%s\"}",
+                      "\"deg_per_step\":%.5f,\"time\":\"%s\",\"calibration\":\"%s\",\"comment\":\"%s\"}",
                       p->angle_deg, (unsigned long)fr.exposure_us, p->analog_gain, fr.width, fr.height, fr.bayer,
-                      x0, y0, x1, y1, wc_w, wc_h, stepper_deg_per_step(), ts, comment);
+                      x0, y0, x1, y1, wc_w, wc_h, stepper_deg_per_step(), ts, cal, comment);
     uint32_t hl32 = hl;
     if (!write_all(f, "HSISCAN1", 8) || !write_all(f, &hl32, 4) || !write_all(f, hdr, hl)) {
         set_error("SD card write failed");
